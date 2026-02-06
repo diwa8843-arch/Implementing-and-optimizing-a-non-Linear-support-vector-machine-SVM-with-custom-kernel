@@ -1,0 +1,188 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "53def6c0-92f4-43b6-9ec0-b399d56893ad",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import numpy as np\n",
+    "import time\n",
+    "from sklearn.datasets import make_moons\n",
+    "from sklearn.svm import SVC\n",
+    "from sklearn.model_selection import train_test_split, RandomizedSearchCV\n",
+    "from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score\n",
+    "from scipy.spatial.distance import cdist"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "id": "6978ffbe-776f-4bcb-8cda-1614323c2a97",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def anova_kernel(X, Y, gamma=1.0, degree=2):\n",
+    "    K = np.zeros((X.shape[0], Y.shape[0]))\n",
+    "    for i in range(X.shape[1]):\n",
+    "        K += np.exp(-gamma * (X[:, i][:, None] - Y[:, i][None, :]) ** 2) ** degree\n",
+    "    return K"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "id": "12923690-93aa-4387-a5d1-0bf8ffdb3e27",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def spectral_kernel(X, Y, gamma=1.0):\n",
+    "    return np.exp(-gamma * cdist(X, Y, metric='cityblock'))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "id": "ef52be70-26c7-45c1-afbd-bc81258ff8d9",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "X, y = make_moons(n_samples=1000, noise=0.25, random_state=42)\n",
+    "\n",
+    "X_train, X_test, y_train, y_test = train_test_split(\n",
+    "    X, y, test_size=0.3, random_state=42\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "id": "31b93ebc-7295-43a5-a042-1dd306f4613a",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def evaluate_model(model, X_train, X_test, y_train, y_test):\n",
+    "    start = time.time()\n",
+    "    model.fit(X_train, y_train)\n",
+    "    train_time = time.time() - start\n",
+    "\n",
+    "    y_pred = model.predict(X_test)\n",
+    "\n",
+    "    return {\n",
+    "        \"Accuracy\": accuracy_score(y_test, y_pred),\n",
+    "        \"Precision\": precision_score(y_test, y_pred),\n",
+    "        \"Recall\": recall_score(y_test, y_pred),\n",
+    "        \"F1\": f1_score(y_test, y_pred),\n",
+    "        \"Time (s)\": train_time\n",
+    "    }"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "id": "1bff41c4-3475-4ba8-9495-1d8c8266bcd2",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "rbf_svm = SVC(kernel='rbf')\n",
+    "\n",
+    "rbf_params = {\n",
+    "    \"C\": [0.1, 1, 10],\n",
+    "    \"gamma\": [0.1, 0.5, 1]\n",
+    "}\n",
+    "\n",
+    "rbf_search = RandomizedSearchCV(rbf_svm, rbf_params, n_iter=5, cv=5)\n",
+    "rbf_search.fit(X_train, y_train)\n",
+    "\n",
+    "rbf_results = evaluate_model(\n",
+    "    rbf_search.best_estimator_, X_train, X_test, y_train, y_test\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "id": "0b14951b-c5cf-4905-90fd-e874c55fd53c",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "anova_svm = SVC(kernel=lambda X, Y: anova_kernel(X, Y, gamma=0.5, degree=2))\n",
+    "\n",
+    "anova_results = evaluate_model(\n",
+    "    anova_svm, X_train, X_test, y_train, y_test\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "id": "d1165d21-ca1d-4309-9e17-b3d10fe3b440",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "spectral_svm = SVC(kernel=lambda X, Y: spectral_kernel(X, Y, gamma=0.8))\n",
+    "\n",
+    "spectral_results = evaluate_model(\n",
+    "    spectral_svm, X_train, X_test, y_train, y_test\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "id": "4ad1b733-5b99-418d-9a5c-ddd01b902732",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "\n",
+      "--- Model Comparison ---\n",
+      "\n",
+      "RBF Kernel: {'Accuracy': 0.95, 'Precision': 0.9640287769784173, 'Recall': 0.9305555555555556, 'F1': 0.9469964664310954, 'Time (s)': 0.0}\n",
+      "ANOVA Kernel: {'Accuracy': 0.9566666666666667, 'Precision': 0.958041958041958, 'Recall': 0.9513888888888888, 'F1': 0.9547038327526133, 'Time (s)': 0.06322431564331055}\n",
+      "Spectral Kernel: {'Accuracy': 0.9533333333333334, 'Precision': 0.9513888888888888, 'Recall': 0.9513888888888888, 'F1': 0.9513888888888888, 'Time (s)': 0.02922964096069336}\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(\"\\n--- Model Comparison ---\\n\")\n",
+    "\n",
+    "print(\"RBF Kernel:\", rbf_results)\n",
+    "print(\"ANOVA Kernel:\", anova_results)\n",
+    "print(\"Spectral Kernel:\", spectral_results)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "6a16506e-11e9-453e-a599-657d4a366a7b",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3 (ipykernel)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.10.11"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
